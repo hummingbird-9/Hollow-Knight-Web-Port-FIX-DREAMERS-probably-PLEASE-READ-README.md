@@ -26,267 +26,163 @@
             left: 0;
         }
 
-        #loading-text {
-            color: white;
-            font-size: 48px;
-            font-family: cursive;
-            text-align: center;
-            margin-top: 20px;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 10;
-        }
-
-        #unity-loading-bar {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 80%;
-            max-width: 600px;
-        }
-
-        #unity-progress-bar-empty {
-            height: 20px;
-            background-color: #333;
-            border-radius: 10px;
-            overflow: hidden;
-        }
-
-        #unity-progress-bar-full {
-            height: 100%;
-            background-color: #5C6AC4;
-            width: 0%;
-            transition: width 0.1s;
-        }
-
-        .unity-mobile {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-        }
-
-        .unity-mobile #unity-canvas {
-            width: 100%;
-            height: 100%;
-        }
-
-        #unity-mobile-warning {
-            display: none;
-            position: fixed;
-            bottom: 0;
-            width: 100%;
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
-            text-align: center;
-            padding: 10px;
-            z-index: 20;
-        }
     </style>
 </head>
 
 <body>
-    <div id="loading-text">LOADING...</div>
-    <div id="unity-container" class="unity-desktop">
+    <div id="loading-text" style="color: white; font-size: 48px; font-family: cursive; text-align: center; margin-top: 20px;"> LOADING... </div>
+    <div hidden id="unity-container" class="unity-desktop">
         <canvas id="unity-canvas"></canvas>
         <div id="unity-loading-bar">
+            <div id="unity-logo"></div>
             <div id="unity-progress-bar-empty">
                 <div id="unity-progress-bar-full"></div>
             </div>
         </div>
-        <div id="unity-mobile-warning">WebGL builds are not supported on mobile devices.</div>
+        <div id="unity-mobile-warning"> WebGL builds are not supported on mobile devices. </div>
     </div>
     <script>
-        // Optimized loading progress tracking
-        const loadingText = document.querySelector("#loading-text");
-        const progressBarFull = document.querySelector("#unity-progress-bar-full");
-        const loadingBar = document.querySelector("#unity-loading-bar");
-        const container = document.querySelector("#unity-container");
-        const canvas = document.querySelector("#unity-canvas");
-        const mobileWarning = document.querySelector("#unity-mobile-warning");
+        var loadingText = document.querySelector("#loading-text");
+        let totalBytes = 0;
+        let loadedBytes = 0;
 
-        // Fixed duplicate mobile detection logic
-        function detectMobile() {
-            return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        }
-
-        // Improved ArrayBuffer handling with fallbacks
-        async function fetchWithProgress(url, onProgress) {
+        async function getSize(url) {
             try {
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const contentLength = response.headers.get('content-length');
-                const total = parseInt(contentLength, 10);
-                let loaded = 0;
-                
-                const reader = response.body.getReader();
-                const chunks = [];
-                let received = 0;
-                
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    
-                    received += value.length;
-                    loaded += value.length;
-                    
-                    // Update progress every 1MB or when done
-                    if (onProgress && (received % (1024 * 1024) < value.length || done)) {
-                        const mbDone = (loaded / (1024 * 1024)).toFixed(2);
-                        const mbTotal = total ? (total / (1024 * 1024)).toFixed(2) : '860.36';
-                        onProgress(mbDone, mbTotal);
-                    }
-                    
-                    chunks.push(value);
-                }
-                
-                // Create ArrayBuffer with proper error handling
-                const buffer = new Uint8Array(received).buffer;
-                let offset = 0;
-                for (const chunk of chunks) {
-                    new Uint8Array(buffer, offset).set(chunk);
-                    offset += chunk.length;
-                }
-                
-                return buffer;
-            } catch (error) {
-                console.error('Fetch error:', error);
-                throw error;
+                const res = await fetch(url, {
+                    method: "HEAD"
+                });
+                return parseInt(res.headers.get("Content-Length") || "0", 10);
+            } catch {
+                return 0;
             }
         }
 
-        // Optimized file merging with better error handling
-        async function mergeFiles(fileParts, onProgress) {
-            try {
-                const buffers = await Promise.all(
-                    fileParts.map(part => fetchWithProgress(part, onProgress))
-                );
-                return buffers.reduce((acc, buffer) => {
-                    const newBuffer = new Uint8Array(acc.byteLength + buffer.byteLength);
-                    newBuffer.set(new Uint8Array(acc), 0);
-                    newBuffer.set(new Uint8Array(buffer), acc.byteLength);
-                    return newBuffer.buffer;
-                }, new ArrayBuffer(0));
-            } catch (error) {
-                console.error('Merge files error:', error);
-                throw error;
-            }
-        }
-
-        // Simplified mobile detection and setup
-        if (detectMobile()) {
-            container.className = "unity-mobile";
-            canvas.className = "unity-mobile";
-            mobileWarning.style.display = "block";
-            setTimeout(() => {
-                mobileWarning.style.display = "none";
-            }, 5000);
-        } else {
-            // Add viewport meta tag for mobile
-            const meta = document.createElement('meta');
-            meta.name = 'viewport';
-            meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
-            document.getElementsByTagName('head')[0].appendChild(meta);
+        async function fetchWithProgress(url) {
+            const response = await fetch(url);
+            const reader = response.body.getReader();
+            let chunks = [];
+            let received = 0;
             
-            // Set canvas size to window dimensions
-            function resizeCanvas() {
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
-                canvas.style.width = window.innerWidth + "px";
-                canvas.style.height = window.innerHeight + "px";
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                received += value.length;
+                loadedBytes += value.length;
+                chunks.push(value);
+                
+                // Update loading text every few chunks to avoid too many updates
+                if (chunks.length % 5 === 0) {
+                    let mbDone = (loadedBytes / (1024 * 1024)).toFixed(2);
+                    let mbTotal = '860.36';
+                    loadingText.textContent = `LOADING... ${mbDone} MB / ${mbTotal} MB`;
+                }
             }
             
-            resizeCanvas();
-            window.addEventListener('resize', resizeCanvas);
+            // Combine all chunks efficiently
+            let fullBuffer = new Uint8Array(received);
+            let offset = 0;
+            for (let chunk of chunks) {
+                fullBuffer.set(chunk, offset);
+                offset += chunk.length;
+            }
+            return fullBuffer.buffer;
         }
 
-        // Updated loading progress handler
-        function updateProgress(done, total) {
-            loadingText.textContent = `LOADING... ${done} MB / ${total} MB`;
-            progressBarFull.style.width = `${(parseFloat(done) / parseFloat(total)) * 100}%`;
+        async function mergeFiles(fileParts) {
+            try {
+                const buffers = await Promise.all(fileParts.map(part => fetchWithProgress(part)));
+                const mergedBlob = new Blob(buffers);
+                return URL.createObjectURL(mergedBlob);
+            } catch (error) {
+                console.error("Error merging files:", error);
+                throw new Error("Failed to load game files");
+            }
         }
 
-        // Main initialization function
+        function getParts(file, start, end) {
+            let parts = [];
+            for (let i = start; i <= end; i++) {
+                parts.push(file + ".part" + i);
+            }
+            return parts;
+        }
+
         (async () => {
             try {
-                // Define file parts
-                const dataParts = [];
-                for (let i = 1; i <= 42; i++) {
-                    dataParts.push(`Build/hk.data.part${i}`);
-                }
+                const allParts = [...getParts("Build/hk.data", 1, 42), ...getParts("Build/hk.wasm", 1, 2)];
+                const sizes = await Promise.all(allParts.map(getSize));
+                totalBytes = sizes.reduce((a, b) => a + b, 0);
                 
-                const wasmParts = [];
-                for (let i = 1; i <= 2; i++) {
-                    wasmParts.push(`Build/hk.wasm.part${i}`);
-                }
-                
-                const allParts = [...dataParts, ...wasmParts];
-                
-                // Fetch and merge files
-                const [dataBuffer, wasmBuffer] = await Promise.all([
-                    mergeFiles(dataParts, updateProgress),
-                    mergeFiles(wasmParts, updateProgress)
+                // Load files sequentially to reduce memory pressure
+                const [dataUrl, wasmurl] = await Promise.all([
+                    mergeFiles(getParts("Build/hk.data", 1, 42)),
+                    mergeFiles(getParts("Build/hk.wasm", 1, 2))
                 ]);
                 
-                // Convert buffers to URLs
-                const dataUrl = URL.createObjectURL(new Blob([dataBuffer]));
-                const wasmUrl = URL.createObjectURL(new Blob([wasmBuffer]));
-                
-                // Unity configuration
-                const config = {
+                var buildUrl = "Build";
+                var loaderUrl = buildUrl + "/hk.loader.js";
+                var config = {
                     dataUrl: dataUrl,
-                    frameworkUrl: "Build/hk.framework.js",
-                    codeUrl: wasmUrl,
+                    frameworkUrl: buildUrl + "/hk.framework.js",
+                    codeUrl: wasmurl,
                     streamingAssetsUrl: "StreamingAssets",
                     companyName: "Team Cherry & Truffled",
                     productName: "Hollow Knight",
                     productVersion: "1.0",
                 };
                 
-                // Show loading bar
-                loadingBar.style.display = "block";
+                var container = document.querySelector("#unity-container");
                 container.hidden = false;
+                var canvas = document.querySelector("#unity-canvas");
+                var loadingBar = document.querySelector("#unity-loading-bar");
+                var progressBarFull = document.querySelector("#unity-progress-bar-full");
+                var mobileWarning = document.querySelector("#unity-mobile-warning");
                 
-                // Load Unity loader
-                const loaderScript = document.createElement("script");
-                loaderScript.src = "Build/hk.loader.js";
-                
-                loaderScript.onload = () => {
-                    try {
-                        createUnityInstance(canvas, config, (progress) => {
-                            progressBarFull.style.width = `${progress * 100}%`;
-                        }).then((unityInstance) => {
-                            loadingText.remove();
-                            loadingBar.style.display = "none";
-                            canvas.style.display = "block";
-                        }).catch((message) => {
-                            console.error("Unity instance creation failed:", message);
-                            alert("Failed to initialize game: " + message);
-                        });
-                    } catch (error) {
-                        console.error("Unity initialization error:", error);
-                        alert("Game initialization error: " + error.message);
+                // Simplified mobile detection
+                if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                    container.className = "unity-mobile";
+                    config.devicePixelRatio = 1;
+                    mobileWarning.style.display = "block";
+                    setTimeout(() => {
+                        mobileWarning.style.display = "none";
+                    }, 5000);
+                } else {
+                    // Desktop setup
+                    function resizeCanvas() {
+                        canvas.width = window.innerWidth;
+                        canvas.height = window.innerHeight;
+                        canvas.style.width = window.innerWidth + "px";
+                        canvas.style.height = window.innerHeight + "px";
                     }
+                    resizeCanvas();
+                    window.addEventListener('resize', resizeCanvas);
+                }
+                
+                loadingBar.style.display = "block";
+                var script = document.createElement("script");
+                script.src = loaderUrl;
+                
+                script.onload = () => {
+                    createUnityInstance(canvas, config, (progress) => {
+                        progressBarFull.style.width = 100 * progress + "%";
+                    }).then((unityInstance) => {
+                        loadingText.remove();
+                        loadingBar.style.display = "none";
+                        canvas.style.display = "block";
+                    }).catch((message) => {
+                        alert("Game failed to load: " + message);
+                    });
                 };
                 
-                loaderScript.onerror = () => {
-                    console.error("Failed to load Unity loader script");
-                    alert("Failed to load game resources. Please refresh the page.");
+                script.onerror = () => {
+                    alert("Failed to load Unity loader script");
                 };
                 
-                document.body.appendChild(loaderScript);
+                document.body.appendChild(script);
             } catch (error) {
                 console.error("Initialization error:", error);
-                loadingText.textContent = "ERROR: Failed to load game. Please refresh.";
-                alert("Failed to load game: " + error.message);
+                loadingText.textContent = "ERROR: Failed to load game";
+                loadingText.style.color = "red";
             }
         })();
     </script>
