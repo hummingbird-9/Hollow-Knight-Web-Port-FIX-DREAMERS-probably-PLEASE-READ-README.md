@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+<head>
+    <base href="https://cdn.jsdelivr.net/gh/Craftingdead/hollow-knight@latest/">
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Hollow Knight</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #231F20;
+        }
+
+        #unity-container {
+            width: 100%;
+            height: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        #fps-display {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            z-index: 1000;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        #console {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 45%;
+            height: 25%;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            font-family: monospace;
+            font-size: 14px;
+            padding: 10px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .console-error {
+            color: #ff4444;
+        }
+
+        #toggle-instruction {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-family: cursive;
+            font-size: 20px;
+            z-index: 1000;
+        }
+
+    </style>
+</head>
+
+<body>
+    <div id="loading-text" style="color: white; font-size: 48px; font-family: cursive; text-align: center; margin-top: 20px;"> LOADING... </div>
+    <div id="fps-display">FPS: 0</div>
+    <div id="console"></div>
+    <div id="toggle-instruction">press equals to toggle fps, press 1 to toggle console</div>
+    <div hidden id="unity-container" class="unity-desktop">
+        <canvas id="unity-canvas"></canvas>
+        <div id="unity-loading-bar">
+            <div id="unity-logo"></div>
+            <div id="unity-progress-bar-empty">
+                <div id="unity-progress-bar-full"></div>
+            </div>
+        </div>
+        <div id="unity-mobile-warning"> WebGL builds are not supported on mobile devices. </div>
+    </div>
+    <script>
+        var loadingText = document.querySelector("#loading-text");
+        var fpsDisplay = document.getElementById("fps-display");
+        var consoleElement = document.getElementById("console");
+        var toggleInstruction = document.getElementById("toggle-instruction");
+        let totalBytes = 0;
+        let loadedBytes = 0;
+        let showFPS = false;
+        let showConsole = false;
+        let lastFrameTime = 0;
+        let frameCount = 0;
+        let fps = 0;
+
+        // Override console methods to display in our custom console
+        const originalLog = console.log;
+        const originalError = console.error;
+        
+        console.log = function(message) {
+            originalLog.apply(console, arguments);
+            addToConsole(message, false);
+        };
+        
+        console.error = function(message) {
+            originalError.apply(console, arguments);
+            addToConsole(message, true);
+        };
+
+        function addToConsole(message, isError) {
+            if (!showConsole) {
+                showConsole = true;
+                consoleElement.style.display = 'block';
+            }
+            
+            const messageElement = document.createElement('div');
+            messageElement.textContent = message;
+            if (isError) {
+                messageElement.classList.add('console-error');
+            }
+            consoleElement.appendChild(messageElement);
+            
+            // Scroll to bottom
+            consoleElement.scrollTop = consoleElement.scrollHeight;
+        }
+
+        // Handle key press for toggling FPS and console
+        document.addEventListener('keydown', function(event) {
+            if (event.key === '=') {
+                showFPS = !showFPS;
+                fpsDisplay.style.display = showFPS ? 'block' : 'none';
+                toggleInstruction.textContent = showFPS ? 
+                    'press equals to toggle fps, press 1 to toggle console' : 
+                    'press equals to toggle fps, press 1 to toggle console';
+            }
+            
+            // Handle console toggle
+            if (event.key === '1') {
+                showConsole = !showConsole;
+                consoleElement.style.display = showConsole ? 'block' : 'none';
+                toggleInstruction.textContent = showConsole ? 
+                    'press equals to toggle fps, press 1 to toggle console' : 
+                    'press equals to toggle fps, press 1 to toggle console';
+            }
+        });
+
+        // Update FPS counter
+        function updateFPS(timestamp) {
+            if (!lastFrameTime) {
+                lastFrameTime = timestamp;
+                requestAnimationFrame(updateFPS);
+                return;
+            }
+
+            frameCount++;
+            const delta = timestamp - lastFrameTime;
+
+            if (delta >= 1000) {
+                fps = Math.round((frameCount * 1000) / delta);
+                fpsDisplay.textContent = `FPS: ${fps}`;
+                frameCount = 0;
+                lastFrameTime = timestamp;
+            }
+
+            requestAnimationFrame(updateFPS);
+        }
+
+        async function getSize(url) {
+            try {
+                const res = await fetch(url, {
+                    method: "HEAD"
+                });
+                return parseInt(res.headers.get("Content-Length") || "0", 10);
+            } catch {
+                return 0;
+            }
+        }
+
+        async function fetchWithProgress(url) {
+            const response = await fetch(url);
+            const reader = response.body.getReader();
+            let chunks = [];
+            let received = 0;
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                received += value.length;
+                loadedBytes += value.length;
+                chunks.push(value);
+                
+                // update loading text every few chunks to avoid too many updates
+                if (chunks.length % 5 === 0) {
+                    let mbDone = (loadedBytes / (1024 * 1024)).toFixed(2);
+                    let mbTotal = '860.36';
+                    loadingText.textContent = `LOADING... ${mbDone} MB / ${mbTotal} MB`;
+                }
+            }
+            
+            // combines all chunks 
+            let fullBuffer = new Uint8Array(received);
+            let offset = 0;
+            for (let chunk of chunks) {
+                fullBuffer.set(chunk, offset);
+                offset += chunk.length;
+            }
+            return fullBuffer.buffer;
+        }
+
+        async function mergeFiles(fileParts) {
+            try {
+                const buffers = await Promise.all(fileParts.map(part => fetchWithProgress(part)));
+                const mergedBlob = new Blob(buffers);
+                return URL.createObjectURL(mergedBlob);
+            } catch (error) {
+                console.error("Error merging files:", error);
+                throw new Error("Failed to load game files");
+            }
+        }
+
+        function getParts(file, start, end) {
+            let parts = [];
+            for (let i = start; i <= end; i++) {
+                parts.push(file + ".part" + i);
+            }
+            return parts;
+        }
+
+        (async () => {
+            try {
+                const allParts = [...getParts("Build/hk.data", 1, 42), ...getParts("Build/hk.wasm", 1, 2)];
+                const sizes = await Promise.all(allParts.map(getSize));
+                totalBytes = sizes.reduce((a, b) => a + b, 0);
+                
+                // loads files sequentially to reduce memory pressure, this is the main thing that's different from akauk's version
+                const [dataUrl, wasmurl] = await Promise.all([
+                    mergeFiles(getParts("Build/hk.data", 1, 42)),
+                    mergeFiles(getParts("Build/hk.wasm", 1, 2))
+                ]);
+                
+                var buildUrl = "Build";
+                var loaderUrl = buildUrl + "/hk.loader.js";
+                var config = {
+                    dataUrl: dataUrl,
+                    frameworkUrl: buildUrl + "/hk.framework.js",
+                    codeUrl: wasmurl,
+                    streamingAssetsUrl: "StreamingAssets",
+                    companyName: "Team Cherry & Truffled",
+                    productName: "Hollow Knight",
+                    productVersion: "1.0",
+                };
+                
+                var container = document.querySelector("#unity-container");
+                container.hidden = false;
+                var canvas = document.querySelector("#unity-canvas");
+                var loadingBar = document.querySelector("#unity-loading-bar");
+                var progressBarFull = document.querySelector("#unity-progress-bar-full");
+                var mobileWarning = document.querySelector("#unity-mobile-warning");
+                
+                // better mobile detection
+                if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                    container.className = "unity-mobile";
+                    config.devicePixelRatio = 1;
+                    mobileWarning.style.display = "block";
+                    setTimeout(() => {
+                        mobileWarning.style.display = "none";
+                    }, 5000);
+                } else {
+                    // Desktop setup
+                    function resizeCanvas() {
+                        canvas.width = window.innerWidth;
+                        canvas.height = window.innerHeight;
+                        canvas.style.width = window.innerWidth + "px";
+                        canvas.style.height = window.innerHeight + "px";
+                    }
+                    resizeCanvas();
+                    window.addEventListener('resize', resizeCanvas);
+                }
+                
+                loadingBar.style.display = "block";
+                var script = document.createElement("script");
+                script.src = loaderUrl;
+                
+                script.onload = () => {
+                    createUnityInstance(canvas, config, (progress) => {
+                        progressBarFull.style.width = 100 * progress + "%";
+                    }).then((unityInstance) => {
+                        loadingText.remove();
+                        loadingBar.style.display = "none";
+                        canvas.style.display = "block";
+                        
+                        // Start FPS tracking after Unity loads
+                        if (showFPS) {
+                            requestAnimationFrame(updateFPS);
+                        }
+                    }).catch((message) => {
+                        alert("Game failed to load: " + message);
+                    });
+                };
+                
+                script.onerror = () => {
+                    alert("Failed to load Unity loader script");
+                };
+                
+                document.body.appendChild(script);
+            } catch (error) {
+                console.error("Initialization error:", error);
+                loadingText.textContent = "ERROR: Failed to load game";
+                loadingText.style.color = "red";
+            }
+        })();
+    </script>
+</body>
+
+</html>
