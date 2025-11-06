@@ -70,7 +70,7 @@
                 loadedBytes += value.length;
                 chunks.push(value);
                 
-                // Update loading text every few chunks to avoid too many updates
+                // update loading text every few chunks to avoid too many updates
                 if (chunks.length % 5 === 0) {
                     let mbDone = (loadedBytes / (1024 * 1024)).toFixed(2);
                     let mbTotal = '860.36';
@@ -78,7 +78,7 @@
                 }
             }
             
-            // Combine all chunks efficiently
+            // combines all chunks 
             let fullBuffer = new Uint8Array(received);
             let offset = 0;
             for (let chunk of chunks) {
@@ -113,7 +113,7 @@
                 const sizes = await Promise.all(allParts.map(getSize));
                 totalBytes = sizes.reduce((a, b) => a + b, 0);
                 
-                // Load files sequentially to reduce memory pressure
+                // loads files sequentially to reduce memory pressure, this is the main thing that's different from akauk's version
                 const [dataUrl, wasmurl] = await Promise.all([
                     mergeFiles(getParts("Build/hk.data", 1, 42)),
                     mergeFiles(getParts("Build/hk.wasm", 1, 2))
@@ -138,7 +138,7 @@
                 var progressBarFull = document.querySelector("#unity-progress-bar-full");
                 var mobileWarning = document.querySelector("#unity-mobile-warning");
                 
-                // Simplified mobile detection
+                // better mobile detection
                 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
                     container.className = "unity-mobile";
                     config.devicePixelRatio = 1;
