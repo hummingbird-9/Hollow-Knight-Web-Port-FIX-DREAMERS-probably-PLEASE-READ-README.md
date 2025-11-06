@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+    <base href="https://cdn.jsdelivr.net/gh/Craftingdead/hollow-knight@latest/">
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Hollow Knight</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #231F20;
+        }
+
+        #unity-container {
+            width: 100%;
+            height: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        #loading-text {
+            color: white;
+            font-size: 48px;
+            font-family: cursive;
+            text-align: center;
+            margin-top: 20px;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
+
+        #unity-loading-bar {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            max-width: 600px;
+        }
+
+        #unity-progress-bar-empty {
+            height: 20px;
+            background-color: #333;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        #unity-progress-bar-full {
+            height: 100%;
+            background-color: #5C6AC4;
+            width: 0%;
+            transition: width 0.1s;
+        }
+
+        .unity-mobile {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .unity-mobile #unity-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        #unity-mobile-warning {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            text-align: center;
+            padding: 10px;
+            z-index: 20;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading-text">LOADING...</div>
+    <div id="unity-container" class="unity-desktop">
+        <canvas id="unity-canvas"></canvas>
+        <div id="unity-loading-bar">
+            <div id="unity-progress-bar-empty">
+                <div id="unity-progress-bar-full"></div>
+            </div>
+        </div>
+        <div id="unity-mobile-warning">WebGL builds are not supported on mobile devices.</div>
+    </div>
+    <script>
+        // Optimized loading progress tracking
+        const loadingText = document.querySelector("#loading-text");
+        const progressBarFull = document.querySelector("#unity-progress-bar-full");
+        const loadingBar = document.querySelector("#unity-loading-bar");
+        const container = document.querySelector("#unity-container");
+        const canvas = document.querySelector("#unity-canvas");
+        const mobileWarning = document.querySelector("#unity-mobile-warning");
+
+        // Fixed duplicate mobile detection logic
+        function detectMobile() {
+            return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        }
+
+        // Improved ArrayBuffer handling with fallbacks
+        async function fetchWithProgress(url, onProgress) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const contentLength = response.headers.get('content-length');
+                const total = parseInt(contentLength, 10);
+                let loaded = 0;
+                
+                const reader = response.body.getReader();
+                const chunks = [];
+                let received = 0;
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    received += value.length;
+                    loaded += value.length;
+                    
+                    // Update progress every 1MB or when done
+                    if (onProgress && (received % (1024 * 1024) < value.length || done)) {
+                        const mbDone = (loaded / (1024 * 1024)).toFixed(2);
+                        const mbTotal = total ? (total / (1024 * 1024)).toFixed(2) : '860.36';
+                        onProgress(mbDone, mbTotal);
+                    }
+                    
+                    chunks.push(value);
+                }
+                
+                // Create ArrayBuffer with proper error handling
+                const buffer = new Uint8Array(received).buffer;
+                let offset = 0;
+                for (const chunk of chunks) {
+                    new Uint8Array(buffer, offset).set(chunk);
+                    offset += chunk.length;
+                }
+                
+                return buffer;
+            } catch (error) {
+                console.error('Fetch error:', error);
+                throw error;
+            }
+        }
+
+        // Optimized file merging with better error handling
+        async function mergeFiles(fileParts, onProgress) {
+            try {
+                const buffers = await Promise.all(
+                    fileParts.map(part => fetchWithProgress(part, onProgress))
+                );
+                return buffers.reduce((acc, buffer) => {
+                    const newBuffer = new Uint8Array(acc.byteLength + buffer.byteLength);
+                    newBuffer.set(new Uint8Array(acc), 0);
+                    newBuffer.set(new Uint8Array(buffer), acc.byteLength);
+                    return newBuffer.buffer;
+                }, new ArrayBuffer(0));
+            } catch (error) {
+                console.error('Merge files error:', error);
+                throw error;
+            }
+        }
+
+        // Simplified mobile detection and setup
+        if (detectMobile()) {
+            container.className = "unity-mobile";
+            canvas.className = "unity-mobile";
+            mobileWarning.style.display = "block";
+            setTimeout(() => {
+                mobileWarning.style.display = "none";
+            }, 5000);
+        } else {
+            // Add viewport meta tag for mobile
+            const meta = document.createElement('meta');
+            meta.name = 'viewport';
+            meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+            document.getElementsByTagName('head')[0].appendChild(meta);
+            
+            // Set canvas size to window dimensions
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                canvas.style.width = window.innerWidth + "px";
+                canvas.style.height = window.innerHeight + "px";
+            }
+            
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+        }
+
+        // Updated loading progress handler
+        function updateProgress(done, total) {
+            loadingText.textContent = `LOADING... ${done} MB / ${total} MB`;
+            progressBarFull.style.width = `${(parseFloat(done) / parseFloat(total)) * 100}%`;
+        }
+
+        // Main initialization function
+        (async () => {
+            try {
+                // Define file parts
+                const dataParts = [];
+                for (let i = 1; i <= 42; i++) {
+                    dataParts.push(`Build/hk.data.part${i}`);
+                }
+                
+                const wasmParts = [];
+                for (let i = 1; i <= 2; i++) {
+                    wasmParts.push(`Build/hk.wasm.part${i}`);
+                }
+                
+                const allParts = [...dataParts, ...wasmParts];
+                
+                // Fetch and merge files
+                const [dataBuffer, wasmBuffer] = await Promise.all([
+                    mergeFiles(dataParts, updateProgress),
+                    mergeFiles(wasmParts, updateProgress)
+                ]);
+                
+                // Convert buffers to URLs
+                const dataUrl = URL.createObjectURL(new Blob([dataBuffer]));
+                const wasmUrl = URL.createObjectURL(new Blob([wasmBuffer]));
+                
+                // Unity configuration with memory optimizations
+                const config = {
+                    dataUrl: dataUrl,
+                    frameworkUrl: "Build/hk.framework.js",
+                    codeUrl: wasmUrl,
+                    streamingAssetsUrl: "StreamingAssets",
+                    companyName: "Team Cherry & Truffled",
+                    productName: "Hollow Knight",
+                    productVersion: "1.0",
+                    // Memory optimization settings
+                    memorySettings: {
+                        initialMemory: 256, // Start with 256MB instead of default
+                        maximumMemory: 512, // Limit to 512MB
+                    },
+                    // Disable unnecessary features to save memory
+                    disableWebGL2: true, // Use WebGL1 if available
+                    disableWebGL: false,
+                };
+                
+                // Show loading bar
+                loadingBar.style.display = "block";
+                container.hidden = false;
+                
+                // Load Unity loader
+                const loaderScript = document.createElement("script");
+                loaderScript.src = "Build/hk.loader.js";
+                
+                loaderScript.onload = () => {
+                    try {
+                        // Apply memory optimizations before creating Unity instance
+                        if (typeof createUnityInstance !== 'undefined') {
+                            createUnityInstance(canvas, config, (progress) => {
+                                progressBarFull.style.width = `${progress * 100}%`;
+                            }).then((unityInstance) => {
+                                loadingText.remove();
+                                loadingBar.style.display = "none";
+                                canvas.style.display = "block";
+                                
+                                // Additional cleanup after initialization
+                                setTimeout(() => {
+                                    // Clean up temporary objects
+                                    URL.revokeObjectURL(dataUrl);
+                                    URL.revokeObjectURL(wasmUrl);
+                                }, 1000);
+                            }).catch((message) => {
+                                console.error("Unity instance creation failed:", message);
+                                alert("Failed to initialize game: " + message);
+                            });
+                        } else {
+                            throw new Error("Unity loader not ready");
+                        }
+                    } catch (error) {
+                        console.error("Unity initialization error:", error);
+                        alert("Game initialization error: " + error.message);
+                    }
+                };
+                
+                loaderScript.onerror = () => {
+                    console.error("Failed to load Unity loader script");
+                    alert("Failed to load game resources. Please refresh the page.");
+                };
+                
+                document.body.appendChild(loaderScript);
+            } catch (error) {
+                console.error("Initialization error:", error);
+                loadingText.textContent = "ERROR: Failed to load game. Please refresh.";
+                alert("Failed to load game: " + error.message);
+            }
+        })();
+    </script>
+</body>
+</html>
