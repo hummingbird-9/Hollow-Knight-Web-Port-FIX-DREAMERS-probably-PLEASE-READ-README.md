@@ -90,7 +90,11 @@
 
         async function mergeFiles(fileParts) {
             try {
-                const buffers = await Promise.all(fileParts.map(part => fetchWithProgress(part)));
+                // Load parts sequentially instead of in parallel
+                const buffers = [];
+                for (const part of fileParts) {
+                    buffers.push(await fetchWithProgress(part));
+                }
                 const mergedBlob = new Blob(buffers);
                 return URL.createObjectURL(mergedBlob);
             } catch (error) {
@@ -109,15 +113,21 @@
 
         (async () => {
             try {
-                const allParts = [...getParts("Build/hk.data", 1, 42), ...getParts("Build/hk.wasm", 1, 2)];
-                const sizes = await Promise.all(allParts.map(getSize));
+                // Load files sequentially to reduce memory pressure
+                const dataParts = getParts("Build/hk.data", 1, 42);
+                const wasmParts = getParts("Build/hk.wasm", 1, 2);
+                
+                // Get sizes first
+                const sizes = await Promise.all(dataParts.map(getSize));
                 totalBytes = sizes.reduce((a, b) => a + b, 0);
                 
-                // loads files sequentially to reduce memory pressure, this is the main thing that's different from akauk's version
-                const [dataUrl, wasmurl] = await Promise.all([
-                    mergeFiles(getParts("Build/hk.data", 1, 42)),
-                    mergeFiles(getParts("Build/hk.wasm", 1, 2))
-                ]);
+                // Load data file first
+                loadingText.textContent = "Loading game data...";
+                const dataUrl = await mergeFiles(dataParts);
+                
+                // Load wasm file second
+                loadingText.textContent = "Loading game code...";
+                const wasmurl = await mergeFiles(wasmParts);
                 
                 var buildUrl = "Build";
                 var loaderUrl = buildUrl + "/hk.loader.js";
