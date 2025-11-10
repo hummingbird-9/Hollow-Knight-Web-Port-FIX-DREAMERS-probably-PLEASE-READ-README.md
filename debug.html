@@ -311,6 +311,9 @@
                         loadingBar.style.display = "none";
                         canvas.style.display = "block";
                         
+                        // Hide toggle instruction after Unity loads
+                        toggleInstruction.style.display = "none";
+                        
                         // Start FPS tracking after Unity loads
                         if (showFPS) {
                             requestAnimationFrame(updateFPS);
