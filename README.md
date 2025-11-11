@@ -1,5 +1,5 @@
 DIDNT FIX DREAMERS
-
+I thought I fixed them by adding the empty assets but I was wrong. If I was right, I would've rickrolled you all with the brand new dreamer cutscene, but I have failed 😢
 
 This project is an improved version of CraftingDeads improved version of bog/aukak's hollow knight web port. Both ports crashed for me due to arraybuffer instantation, so I made this.
 The following are what changed:
