@@ -1,4 +1,4 @@
-FIXED DREAMERS PROBABLY, BUT PLAY WITH THE DEBUG.HTML TO SEE THE CONSOLE BEFORE THE DREAMERS (possibly but probably not) CRASH THE GAME! If they do, REPORT THE CONSOLE LOGS TO ME PLS :3
+DIDNT FIX DREAMERS
 
 
 This project is an improved version of CraftingDeads improved version of bog/aukak's hollow knight web port. Both ports crashed for me due to arraybuffer instantation, so I made this.
